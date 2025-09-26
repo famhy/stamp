@@ -51,21 +51,35 @@ export function compareCanvases(
     const b2 = data2[i + 2];
     const a2 = data2[i + 3];
 
-    // Calculate color difference
+    // Calculate color difference (more lenient)
     const colorDiff =
       Math.sqrt(
         Math.pow(r1 - r2, 2) + Math.pow(g1 - g2, 2) + Math.pow(b1 - b2, 2)
       ) / Math.sqrt(3 * Math.pow(255, 2)); // Normalize to 0-1
 
-    // Calculate alpha difference
+    // Calculate alpha difference (more lenient)
     const alphaDiff = Math.abs(a1 - a2) / 255;
 
-    // Check if pixels match within tolerance
-    const maxColorDiff = tolerance;
-    const maxAlphaDiff = tolerance;
+    // More lenient matching - consider both pixels as "content" if either has alpha > 0
+    const hasContent1 = a1 > 0;
+    const hasContent2 = a2 > 0;
 
-    if (colorDiff <= maxColorDiff && alphaDiff <= maxAlphaDiff) {
+    // If both pixels are transparent, they match
+    if (!hasContent1 && !hasContent2) {
       matchingPixels++;
+    }
+    // If both pixels have content, check color similarity
+    else if (hasContent1 && hasContent2) {
+      const maxColorDiff = tolerance * 2; // More lenient color matching
+      const maxAlphaDiff = tolerance * 2; // More lenient alpha matching
+
+      if (colorDiff <= maxColorDiff && alphaDiff <= maxAlphaDiff) {
+        matchingPixels++;
+      }
+    }
+    // If only one has content, it's a partial match (count as half match)
+    else if (hasContent1 || hasContent2) {
+      matchingPixels += 0.5;
     }
   }
 

@@ -9,7 +9,7 @@ export default function Home() {
   const [rightImageData, setRightImageData] = useState<ImageData | null>(null)
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
   const [selectedShape, setSelectedShape] = useState<StampShape>('circle')
-  const [tolerance, setTolerance] = useState(0.1)
+  const [tolerance, setTolerance] = useState(0.3)
   
   const leftCanvasRef = useRef<StampCanvasRef>(null)
   const rightCanvasRef = useRef<StampCanvasRef>(null)
@@ -80,6 +80,7 @@ export default function Home() {
               >
                 <option value="circle">Circle</option>
                 <option value="square">Square</option>
+                <option value="finger">Finger Touch</option>
                 <option value="freehand">Freehand</option>
               </select>
             </div>
@@ -89,9 +90,9 @@ export default function Home() {
               <label className="text-sm font-medium text-gray-700">Tolerance:</label>
               <input
                 type="range"
-                min="0"
-                max="0.5"
-                step="0.01"
+                min="0.1"
+                max="0.8"
+                step="0.05"
                 value={tolerance}
                 onChange={(e) => setTolerance(parseFloat(e.target.value))}
                 className="w-24"

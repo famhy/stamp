@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 
-export type StampShape = 'circle' | 'square' | 'freehand'
+export type StampShape = 'circle' | 'square' | 'freehand' | 'finger'
 
 interface StampCanvasProps {
   width: number
@@ -45,15 +45,22 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
   }), [clearCanvas])
 
   // Draw a circle at the given position
-  const drawCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 20) => {
+  const drawCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 30) => {
     ctx.beginPath()
     ctx.arc(x, y, size, 0, 2 * Math.PI)
     ctx.fill()
   }, [])
 
   // Draw a square at the given position
-  const drawSquare = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 20) => {
+  const drawSquare = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 30) => {
     ctx.fillRect(x - size / 2, y - size / 2, size, size)
+  }, [])
+
+  // Draw a finger-like oval at the given position
+  const drawFinger = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 25) => {
+    ctx.beginPath()
+    ctx.ellipse(x, y, size, size * 1.5, 0, 0, 2 * Math.PI)
+    ctx.fill()
   }, [])
 
   // Handle mouse/touch start
@@ -85,7 +92,8 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     if (!ctx) return
 
     ctx.fillStyle = '#000000'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = 4
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
@@ -93,13 +101,15 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       drawCircle(ctx, x, y)
     } else if (shape === 'square') {
       drawSquare(ctx, x, y)
+    } else if (shape === 'finger') {
+      drawFinger(ctx, x, y)
     } else if (shape === 'freehand') {
       ctx.beginPath()
       ctx.moveTo(x, y)
     }
 
     setHasContent(true)
-  }, [shape, drawCircle, drawSquare])
+  }, [shape, drawCircle, drawSquare, drawFinger])
 
   // Handle mouse/touch move
   const handleMove = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -175,7 +185,7 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     // Set default styles
     ctx.fillStyle = '#000000'
     ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 2
+    ctx.lineWidth = 4
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
@@ -195,6 +205,7 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
         onTouchStart={handleStart}
         onTouchMove={handleMove}
         onTouchEnd={handleEnd}
+        onTouchCancel={handleEnd}
         className="border border-gray-300 rounded-lg cursor-crosshair bg-white touch-none"
         style={{ 
           width: '100%', 
