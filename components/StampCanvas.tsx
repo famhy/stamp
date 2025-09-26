@@ -2,7 +2,7 @@
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 
-export type StampShape = 'circle' | 'square' | 'freehand' | 'finger'
+export type StampShape = 'auto' | 'circle' | 'square' | 'freehand'
 
 interface StampCanvasProps {
   width: number
@@ -56,11 +56,25 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.fillRect(x - size / 2, y - size / 2, size, size)
   }, [])
 
-  // Draw a finger-like oval at the given position
-  const drawFinger = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 25) => {
+  // Auto-detect and draw the actual contact area
+  const drawAutoStamp = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, pressure: number = 1) => {
+    // Use pressure to determine size - more pressure = larger stamp
+    const baseSize = 15
+    const size = baseSize + (pressure * 20)
+    
+    // Create a more realistic stamp shape based on pressure
     ctx.beginPath()
-    ctx.ellipse(x, y, size, size * 1.5, 0, 0, 2 * Math.PI)
+    ctx.arc(x, y, size, 0, 2 * Math.PI)
     ctx.fill()
+    
+    // Add some variation to make it look more like a real stamp
+    if (pressure > 0.5) {
+      ctx.beginPath()
+      ctx.arc(x, y, size * 0.7, 0, 2 * Math.PI)
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+      ctx.fill()
+      ctx.fillStyle = '#000000' // Reset
+    }
   }, [])
 
   // Handle mouse/touch start
@@ -97,19 +111,26 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
-    if (shape === 'circle') {
+    // Get pressure information if available
+    let pressure = 1
+    if ('touches' in e && e.touches[0]) {
+      // Try to get pressure from touch event
+      pressure = (e.touches[0] as any).force || (e.touches[0] as any).pressure || 1
+    }
+
+    if (shape === 'auto') {
+      drawAutoStamp(ctx, x, y, pressure)
+    } else if (shape === 'circle') {
       drawCircle(ctx, x, y)
     } else if (shape === 'square') {
       drawSquare(ctx, x, y)
-    } else if (shape === 'finger') {
-      drawFinger(ctx, x, y)
     } else if (shape === 'freehand') {
       ctx.beginPath()
       ctx.moveTo(x, y)
     }
 
     setHasContent(true)
-  }, [shape, drawCircle, drawSquare, drawFinger])
+  }, [shape, drawCircle, drawSquare, drawAutoStamp])
 
   // Handle mouse/touch move
   const handleMove = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {

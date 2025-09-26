@@ -8,7 +8,7 @@ export default function Home() {
   const [leftImageData, setLeftImageData] = useState<ImageData | null>(null)
   const [rightImageData, setRightImageData] = useState<ImageData | null>(null)
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
-  const [selectedShape, setSelectedShape] = useState<StampShape>('circle')
+  const [selectedShape, setSelectedShape] = useState<StampShape>('auto')
   const [tolerance, setTolerance] = useState(0.3)
   
   const leftCanvasRef = useRef<StampCanvasRef>(null)
@@ -78,9 +78,9 @@ export default function Home() {
                 onChange={(e) => setSelectedShape(e.target.value as StampShape)}
                 className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
+                <option value="auto">Auto Detect (Recommended)</option>
                 <option value="circle">Circle</option>
                 <option value="square">Square</option>
-                <option value="finger">Finger Touch</option>
                 <option value="freehand">Freehand</option>
               </select>
             </div>
@@ -190,15 +190,31 @@ export default function Home() {
 
         {/* Instructions */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">How to use:</h3>
+          <h3 className="font-semibold text-blue-900 mb-2">How to use for physical stamping:</h3>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• Choose a stamp shape from the dropdown</li>
-            <li>• Tap or drag on the left canvas to create your first stamp</li>
-            <li>• Tap or drag on the right canvas to create your second stamp</li>
-            <li>• The app will automatically compare them, or click "Compare" manually</li>
-            <li>• Adjust the tolerance slider to make matching more or less strict</li>
-            <li>• Use "Reset" to clear both canvases and start over</li>
+            <li>• <strong>Select "Auto Detect"</strong> for best results with physical objects</li>
+            <li>• <strong>Press any object firmly</strong> against the screen to create a stamp</li>
+            <li>• <strong>Good stamping materials:</strong> coins, bottle caps, keys, erasers, small toys</li>
+            <li>• <strong>Press the same object</strong> on both sides for comparison</li>
+            <li>• <strong>Apply firm pressure</strong> - the harder you press, the better the detection</li>
+            <li>• <strong>Adjust tolerance</strong> (30-50% works best for physical stamps)</li>
+            <li>• <strong>Use "Reset"</strong> to clear and try different objects</li>
           </ul>
+        </div>
+
+        {/* Material Suggestions */}
+        <div className="mt-4 bg-green-50 rounded-lg p-4">
+          <h3 className="font-semibold text-green-900 mb-2">Best Materials for Stamping:</h3>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-green-800">
+            <div>• Coins (various sizes)</div>
+            <div>• Bottle caps</div>
+            <div>• Keys</div>
+            <div>• Erasers</div>
+            <div>• Small toys</div>
+            <div>• Buttons</div>
+            <div>• Small containers</div>
+            <div>• Jewelry pieces</div>
+          </div>
         </div>
       </div>
     </div>
