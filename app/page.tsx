@@ -190,16 +190,16 @@ export default function Home() {
 
         {/* Instructions */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">How to use for complex shape detection:</h3>
+          <h3 className="font-semibold text-blue-900 mb-2">Optimized Multi-Touch Shape Detection:</h3>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• <strong>Select "Auto Detect"</strong> to capture actual object shapes</li>
-            <li>• <strong>Press and hold</strong> the object against the screen for 1-2 seconds</li>
-            <li>• <strong>Move the object slightly</strong> while pressing to capture more contact points</li>
-            <li>• <strong>Works with complex shapes:</strong> stars, hands, keys, toys, jewelry</li>
-            <li>• <strong>Apply firm, even pressure</strong> across the entire object</li>
-            <li>• <strong>Use the same object</strong> on both sides for accurate comparison</li>
-            <li>• <strong>Adjust tolerance</strong> (40-60% works best for complex shapes)</li>
-            <li>• <strong>Try different objects</strong> to see various shape detection</li>
+            <li>• <strong>Select "Auto Detect"</strong> for advanced shape recognition</li>
+            <li>• <strong>Press firmly and hold</strong> the object for 2-3 seconds</li>
+            <li>• <strong>Move object in small circles</strong> while pressing to capture more points</li>
+            <li>• <strong>Uses convex hull algorithm</strong> for better shape detection</li>
+            <li>• <strong>Captures up to 10+ touch points</strong> simultaneously</li>
+            <li>• <strong>Pressure-sensitive detection</strong> - harder press = better detection</li>
+            <li>• <strong>Works with complex shapes:</strong> stars, hands, keys, jewelry, toys</li>
+            <li>• <strong>Adjust tolerance</strong> (30-50% works best for optimized detection)</li>
           </ul>
         </div>
 

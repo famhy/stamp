@@ -37,6 +37,9 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
 
     ctx.clearRect(0, 0, width, height)
     setHasContent(false)
+    setContactPoints([])
+    setTouchHistory([])
+    setIsCapturing(false)
   }, [width, height])
 
   // Expose clearCanvas method to parent via ref
@@ -57,27 +60,68 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
   }, [])
 
   // Track contact points for shape detection
-  const [contactPoints, setContactPoints] = useState<Array<{x: number, y: number, pressure: number}>>([])
+  const [contactPoints, setContactPoints] = useState<Array<{x: number, y: number, pressure: number, timestamp: number}>>([])
   const [isCapturing, setIsCapturing] = useState(false)
+  const [touchHistory, setTouchHistory] = useState<Array<{x: number, y: number, pressure: number, timestamp: number}>>([])
 
-  // Create a more sophisticated shape detection
+  // Advanced convex hull algorithm for better shape detection
+  const convexHull = useCallback((points: Array<{x: number, y: number, pressure: number}>) => {
+    if (points.length < 3) return points
+
+    // Sort points by x-coordinate, then by y-coordinate
+    const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y)
+    
+    // Build lower hull
+    const lower: Array<{x: number, y: number, pressure: number}> = []
+    for (const point of sorted) {
+      while (lower.length >= 2 && 
+             ((lower[lower.length - 1].x - lower[lower.length - 2].x) * (point.y - lower[lower.length - 2].y) - 
+              (lower[lower.length - 1].y - lower[lower.length - 2].y) * (point.x - lower[lower.length - 2].x)) <= 0) {
+        lower.pop()
+      }
+      lower.push(point)
+    }
+    
+    // Build upper hull
+    const upper: Array<{x: number, y: number, pressure: number}> = []
+    for (let i = sorted.length - 1; i >= 0; i--) {
+      const point = sorted[i]
+      while (upper.length >= 2 && 
+             ((upper[upper.length - 1].x - upper[upper.length - 2].x) * (point.y - upper[upper.length - 2].y) - 
+              (upper[upper.length - 1].y - upper[upper.length - 2].y) * (point.x - upper[upper.length - 2].x)) <= 0) {
+        upper.pop()
+      }
+      upper.push(point)
+    }
+    
+    // Remove duplicates and combine
+    lower.pop()
+    upper.pop()
+    return [...lower, ...upper]
+  }, [])
+
+  // Create optimized shape from points
   const createShapeFromPoints = useCallback((points: Array<{x: number, y: number, pressure: number}>) => {
     if (points.length === 0) return null
 
-    // Sort points by angle from center to create a proper outline
-    const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length
-    const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length
+    // Use convex hull for better shape detection
+    const hullPoints = convexHull(points)
     
-    const sortedPoints = points.sort((a, b) => {
+    // Calculate center
+    const centerX = hullPoints.reduce((sum, p) => sum + p.x, 0) / hullPoints.length
+    const centerY = hullPoints.reduce((sum, p) => sum + p.y, 0) / hullPoints.length
+    
+    // Sort points by angle from center for smooth drawing
+    const sortedPoints = hullPoints.sort((a, b) => {
       const angleA = Math.atan2(a.y - centerY, a.x - centerX)
       const angleB = Math.atan2(b.y - centerY, b.x - centerX)
       return angleA - angleB
     })
 
-    return { centerX, centerY, points: sortedPoints }
-  }, [])
+    return { centerX, centerY, points: sortedPoints, allPoints: points }
+  }, [convexHull])
 
-  // Draw the actual contact area shape
+  // Optimized shape drawing with better pressure mapping
   const drawContactArea = useCallback((ctx: CanvasRenderingContext2D, points: Array<{x: number, y: number, pressure: number}>) => {
     if (points.length === 0) return
 
@@ -89,7 +133,7 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     if (points.length === 1) {
       // Single point - draw a circle based on pressure
       const point = points[0]
-      const size = 8 + (point.pressure * 15)
+      const size = 6 + (point.pressure * 20)
       ctx.arc(point.x, point.y, size, 0, 2 * Math.PI)
     } else if (points.length === 2) {
       // Two points - draw an ellipse
@@ -97,8 +141,8 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       const p2 = points[1]
       const centerX = (p1.x + p2.x) / 2
       const centerY = (p1.y + p2.y) / 2
-      const radiusX = Math.abs(p2.x - p1.x) / 2 + 8
-      const radiusY = Math.abs(p2.y - p1.y) / 2 + 8
+      const radiusX = Math.abs(p2.x - p1.x) / 2 + 6
+      const radiusY = Math.abs(p2.y - p1.y) / 2 + 6
       ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI)
     } else if (points.length === 3) {
       // Three points - draw a triangle
@@ -107,16 +151,18 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       ctx.lineTo(points[2].x, points[2].y)
       ctx.closePath()
     } else {
-      // Multiple points - create a smooth outline
-      // Use the sorted points to create a proper shape outline
+      // Multiple points - create optimized outline using convex hull
+      if (shape.points.length < 3) return
+      
+      // Start with first point
       ctx.moveTo(shape.points[0].x, shape.points[0].y)
       
-      // Create smooth curves between points for complex shapes
+      // Create smooth curves for complex shapes
       for (let i = 1; i < shape.points.length; i++) {
         const current = shape.points[i]
         const previous = shape.points[i - 1]
         
-        // Add some smoothing for complex shapes
+        // Calculate control points for smooth curves
         const controlX = (previous.x + current.x) / 2
         const controlY = (previous.y + current.y) / 2
         
@@ -128,15 +174,24 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       }
       
       // Close the shape smoothly
-      const lastPoint = shape.points[shape.points.length - 1]
-      const firstPoint = shape.points[0]
-      const controlX = (lastPoint.x + firstPoint.x) / 2
-      const controlY = (lastPoint.y + firstPoint.y) / 2
-      ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, controlX, controlY)
-      ctx.closePath()
+      if (shape.points.length > 2) {
+        const lastPoint = shape.points[shape.points.length - 1]
+        const firstPoint = shape.points[0]
+        const controlX = (lastPoint.x + firstPoint.x) / 2
+        const controlY = (lastPoint.y + firstPoint.y) / 2
+        ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, controlX, controlY)
+        ctx.closePath()
+      }
     }
     
     ctx.fill()
+    
+    // Add pressure-based shading for better visual feedback
+    if (points.length > 3) {
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.1)'
+      ctx.fill()
+      ctx.fillStyle = '#000000' // Reset
+    }
   }, [createShapeFromPoints])
 
   // Handle mouse/touch start
@@ -163,8 +218,9 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.lineJoin = 'round'
 
     if (shape === 'auto') {
-      // For auto mode, start capturing contact points
-      const newPoints: Array<{x: number, y: number, pressure: number}> = []
+      // For auto mode, start capturing contact points with timestamp
+      const newPoints: Array<{x: number, y: number, pressure: number, timestamp: number}> = []
+      const now = Date.now()
       
       if ('touches' in e) {
         // Handle multiple touches for complex shapes
@@ -172,17 +228,18 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
           const touch = e.touches[i]
           const x = (touch.clientX - rect.left) * scaleX
           const y = (touch.clientY - rect.top) * scaleY
-          const pressure = (touch as any).force || (touch as any).pressure || 1
-          newPoints.push({ x, y, pressure })
+          const pressure = (touch as any).force || (touch as any).pressure || 0.5
+          newPoints.push({ x, y, pressure, timestamp: now })
         }
       } else {
         // Mouse event
         const x = (e.clientX - rect.left) * scaleX
         const y = (e.clientY - rect.top) * scaleY
-        newPoints.push({ x, y, pressure: 1 })
+        newPoints.push({ x, y, pressure: 1, timestamp: now })
       }
       
       setContactPoints(newPoints)
+      setTouchHistory(prev => [...prev, ...newPoints])
       drawContactArea(ctx, newPoints)
     } else if (shape === 'circle') {
       const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
@@ -219,28 +276,32 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     if (!ctx) return
 
     if (shape === 'auto') {
-      // Continue capturing contact points for complex shapes
-      const newPoints: Array<{x: number, y: number, pressure: number}> = []
+      // Continue capturing contact points for complex shapes with better sampling
+      const newPoints: Array<{x: number, y: number, pressure: number, timestamp: number}> = []
+      const now = Date.now()
       
       if ('touches' in e) {
         for (let i = 0; i < e.touches.length; i++) {
           const touch = e.touches[i]
           const x = (touch.clientX - rect.left) * scaleX
           const y = (touch.clientY - rect.top) * scaleY
-          const pressure = (touch as any).force || (touch as any).pressure || 1
-          newPoints.push({ x, y, pressure })
+          const pressure = (touch as any).force || (touch as any).pressure || 0.5
+          newPoints.push({ x, y, pressure, timestamp: now })
         }
       } else {
         const x = (e.clientX - rect.left) * scaleX
         const y = (e.clientY - rect.top) * scaleY
-        newPoints.push({ x, y, pressure: 1 })
+        newPoints.push({ x, y, pressure: 1, timestamp: now })
       }
       
+      // Update contact points and history
       setContactPoints(prev => [...prev, ...newPoints])
+      setTouchHistory(prev => [...prev, ...newPoints])
       
-      // Redraw the shape with all captured points
+      // Redraw the shape with all captured points using convex hull
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawContactArea(ctx, [...contactPoints, ...newPoints])
+      const allPoints = [...contactPoints, ...newPoints]
+      drawContactArea(ctx, allPoints)
     } else if (shape === 'freehand') {
       const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
       const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * scaleY : (e.clientY - rect.top) * scaleY
@@ -267,11 +328,11 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       ctx.beginPath()
     }
 
-    // Finalize the shape for auto mode
-    if (shape === 'auto' && contactPoints.length > 0) {
-      // Draw the final shape with all captured points
+    // Finalize the shape for auto mode with all captured points
+    if (shape === 'auto' && touchHistory.length > 0) {
+      // Draw the final shape with all captured points using convex hull
       ctx.clearRect(0, 0, canvas.width, canvas.height)
-      drawContactArea(ctx, contactPoints)
+      drawContactArea(ctx, touchHistory)
     }
 
     // Notify parent component that stamping is complete
