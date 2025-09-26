@@ -56,31 +56,95 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.fillRect(x - size / 2, y - size / 2, size, size)
   }, [])
 
-  // Auto-detect and draw the actual contact area
-  const drawAutoStamp = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, pressure: number = 1) => {
-    // Use pressure to determine size - more pressure = larger stamp
-    const baseSize = 15
-    const size = baseSize + (pressure * 20)
+  // Track contact points for shape detection
+  const [contactPoints, setContactPoints] = useState<Array<{x: number, y: number, pressure: number}>>([])
+  const [isCapturing, setIsCapturing] = useState(false)
+
+  // Create a more sophisticated shape detection
+  const createShapeFromPoints = useCallback((points: Array<{x: number, y: number, pressure: number}>) => {
+    if (points.length === 0) return null
+
+    // Sort points by angle from center to create a proper outline
+    const centerX = points.reduce((sum, p) => sum + p.x, 0) / points.length
+    const centerY = points.reduce((sum, p) => sum + p.y, 0) / points.length
     
-    // Create a more realistic stamp shape based on pressure
-    ctx.beginPath()
-    ctx.arc(x, y, size, 0, 2 * Math.PI)
-    ctx.fill()
-    
-    // Add some variation to make it look more like a real stamp
-    if (pressure > 0.5) {
-      ctx.beginPath()
-      ctx.arc(x, y, size * 0.7, 0, 2 * Math.PI)
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
-      ctx.fill()
-      ctx.fillStyle = '#000000' // Reset
-    }
+    const sortedPoints = points.sort((a, b) => {
+      const angleA = Math.atan2(a.y - centerY, a.x - centerX)
+      const angleB = Math.atan2(b.y - centerY, b.x - centerX)
+      return angleA - angleB
+    })
+
+    return { centerX, centerY, points: sortedPoints }
   }, [])
+
+  // Draw the actual contact area shape
+  const drawContactArea = useCallback((ctx: CanvasRenderingContext2D, points: Array<{x: number, y: number, pressure: number}>) => {
+    if (points.length === 0) return
+
+    const shape = createShapeFromPoints(points)
+    if (!shape) return
+
+    ctx.beginPath()
+    
+    if (points.length === 1) {
+      // Single point - draw a circle based on pressure
+      const point = points[0]
+      const size = 8 + (point.pressure * 15)
+      ctx.arc(point.x, point.y, size, 0, 2 * Math.PI)
+    } else if (points.length === 2) {
+      // Two points - draw an ellipse
+      const p1 = points[0]
+      const p2 = points[1]
+      const centerX = (p1.x + p2.x) / 2
+      const centerY = (p1.y + p2.y) / 2
+      const radiusX = Math.abs(p2.x - p1.x) / 2 + 8
+      const radiusY = Math.abs(p2.y - p1.y) / 2 + 8
+      ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI)
+    } else if (points.length === 3) {
+      // Three points - draw a triangle
+      ctx.moveTo(points[0].x, points[0].y)
+      ctx.lineTo(points[1].x, points[1].y)
+      ctx.lineTo(points[2].x, points[2].y)
+      ctx.closePath()
+    } else {
+      // Multiple points - create a smooth outline
+      // Use the sorted points to create a proper shape outline
+      ctx.moveTo(shape.points[0].x, shape.points[0].y)
+      
+      // Create smooth curves between points for complex shapes
+      for (let i = 1; i < shape.points.length; i++) {
+        const current = shape.points[i]
+        const previous = shape.points[i - 1]
+        
+        // Add some smoothing for complex shapes
+        const controlX = (previous.x + current.x) / 2
+        const controlY = (previous.y + current.y) / 2
+        
+        if (i === 1) {
+          ctx.quadraticCurveTo(controlX, controlY, current.x, current.y)
+        } else {
+          ctx.quadraticCurveTo(previous.x, previous.y, controlX, controlY)
+        }
+      }
+      
+      // Close the shape smoothly
+      const lastPoint = shape.points[shape.points.length - 1]
+      const firstPoint = shape.points[0]
+      const controlX = (lastPoint.x + firstPoint.x) / 2
+      const controlY = (lastPoint.y + firstPoint.y) / 2
+      ctx.quadraticCurveTo(lastPoint.x, lastPoint.y, controlX, controlY)
+      ctx.closePath()
+    }
+    
+    ctx.fill()
+  }, [createShapeFromPoints])
 
   // Handle mouse/touch start
   const handleStart = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
     e.preventDefault()
     setIsDrawing(true)
+    setIsCapturing(true)
+    setContactPoints([])
     
     const canvas = canvasRef.current
     if (!canvas) return
@@ -88,53 +152,59 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-
-    let clientX: number, clientY: number
-    
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX
-      clientY = e.touches[0].clientY
-    } else {
-      clientX = e.clientX
-      clientY = e.clientY
-    }
-
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
 
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
     ctx.fillStyle = '#000000'
     ctx.strokeStyle = '#000000'
-    ctx.lineWidth = 4
+    ctx.lineWidth = 2
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
-    // Get pressure information if available
-    let pressure = 1
-    if ('touches' in e && e.touches[0]) {
-      // Try to get pressure from touch event
-      pressure = (e.touches[0] as any).force || (e.touches[0] as any).pressure || 1
-    }
-
     if (shape === 'auto') {
-      drawAutoStamp(ctx, x, y, pressure)
+      // For auto mode, start capturing contact points
+      const newPoints: Array<{x: number, y: number, pressure: number}> = []
+      
+      if ('touches' in e) {
+        // Handle multiple touches for complex shapes
+        for (let i = 0; i < e.touches.length; i++) {
+          const touch = e.touches[i]
+          const x = (touch.clientX - rect.left) * scaleX
+          const y = (touch.clientY - rect.top) * scaleY
+          const pressure = (touch as any).force || (touch as any).pressure || 1
+          newPoints.push({ x, y, pressure })
+        }
+      } else {
+        // Mouse event
+        const x = (e.clientX - rect.left) * scaleX
+        const y = (e.clientY - rect.top) * scaleY
+        newPoints.push({ x, y, pressure: 1 })
+      }
+      
+      setContactPoints(newPoints)
+      drawContactArea(ctx, newPoints)
     } else if (shape === 'circle') {
+      const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
+      const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * scaleY : (e.clientY - rect.top) * scaleY
       drawCircle(ctx, x, y)
     } else if (shape === 'square') {
+      const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
+      const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * scaleY : (e.clientY - rect.top) * scaleY
       drawSquare(ctx, x, y)
     } else if (shape === 'freehand') {
+      const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
+      const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * scaleY : (e.clientY - rect.top) * scaleY
       ctx.beginPath()
       ctx.moveTo(x, y)
     }
 
     setHasContent(true)
-  }, [shape, drawCircle, drawSquare, drawAutoStamp])
+  }, [shape, drawCircle, drawSquare, drawContactArea])
 
   // Handle mouse/touch move
   const handleMove = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
-    if (!isDrawing) return
+    if (!isDrawing || !isCapturing) return
     
     e.preventDefault()
     
@@ -145,27 +215,39 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
 
-    let clientX: number, clientY: number
-    
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX
-      clientY = e.touches[0].clientY
-    } else {
-      clientX = e.clientX
-      clientY = e.clientY
-    }
-
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    if (shape === 'freehand') {
+    if (shape === 'auto') {
+      // Continue capturing contact points for complex shapes
+      const newPoints: Array<{x: number, y: number, pressure: number}> = []
+      
+      if ('touches' in e) {
+        for (let i = 0; i < e.touches.length; i++) {
+          const touch = e.touches[i]
+          const x = (touch.clientX - rect.left) * scaleX
+          const y = (touch.clientY - rect.top) * scaleY
+          const pressure = (touch as any).force || (touch as any).pressure || 1
+          newPoints.push({ x, y, pressure })
+        }
+      } else {
+        const x = (e.clientX - rect.left) * scaleX
+        const y = (e.clientY - rect.top) * scaleY
+        newPoints.push({ x, y, pressure: 1 })
+      }
+      
+      setContactPoints(prev => [...prev, ...newPoints])
+      
+      // Redraw the shape with all captured points
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      drawContactArea(ctx, [...contactPoints, ...newPoints])
+    } else if (shape === 'freehand') {
+      const x = ('touches' in e) ? (e.touches[0].clientX - rect.left) * scaleX : (e.clientX - rect.left) * scaleX
+      const y = ('touches' in e) ? (e.touches[0].clientY - rect.top) * scaleY : (e.clientY - rect.top) * scaleY
       ctx.lineTo(x, y)
       ctx.stroke()
     }
-  }, [isDrawing, shape])
+  }, [isDrawing, isCapturing, shape, contactPoints, drawContactArea])
 
   // Handle mouse/touch end
   const handleEnd = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -173,6 +255,7 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     
     e.preventDefault()
     setIsDrawing(false)
+    setIsCapturing(false)
 
     const canvas = canvasRef.current
     if (!canvas) return
@@ -184,12 +267,19 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
       ctx.beginPath()
     }
 
+    // Finalize the shape for auto mode
+    if (shape === 'auto' && contactPoints.length > 0) {
+      // Draw the final shape with all captured points
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      drawContactArea(ctx, contactPoints)
+    }
+
     // Notify parent component that stamping is complete
     if (onStampComplete) {
       const imageData = ctx.getImageData(0, 0, width, height)
       onStampComplete(imageData)
     }
-  }, [isDrawing, shape, onStampComplete, width, height])
+  }, [isDrawing, shape, contactPoints, drawContactArea, onStampComplete, width, height])
 
   // Set up canvas
   useEffect(() => {

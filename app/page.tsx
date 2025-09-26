@@ -190,30 +190,31 @@ export default function Home() {
 
         {/* Instructions */}
         <div className="mt-6 bg-blue-50 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">How to use for physical stamping:</h3>
+          <h3 className="font-semibold text-blue-900 mb-2">How to use for complex shape detection:</h3>
           <ul className="text-sm text-blue-800 space-y-1">
-            <li>• <strong>Select "Auto Detect"</strong> for best results with physical objects</li>
-            <li>• <strong>Press any object firmly</strong> against the screen to create a stamp</li>
-            <li>• <strong>Good stamping materials:</strong> coins, bottle caps, keys, erasers, small toys</li>
-            <li>• <strong>Press the same object</strong> on both sides for comparison</li>
-            <li>• <strong>Apply firm pressure</strong> - the harder you press, the better the detection</li>
-            <li>• <strong>Adjust tolerance</strong> (30-50% works best for physical stamps)</li>
-            <li>• <strong>Use "Reset"</strong> to clear and try different objects</li>
+            <li>• <strong>Select "Auto Detect"</strong> to capture actual object shapes</li>
+            <li>• <strong>Press and hold</strong> the object against the screen for 1-2 seconds</li>
+            <li>• <strong>Move the object slightly</strong> while pressing to capture more contact points</li>
+            <li>• <strong>Works with complex shapes:</strong> stars, hands, keys, toys, jewelry</li>
+            <li>• <strong>Apply firm, even pressure</strong> across the entire object</li>
+            <li>• <strong>Use the same object</strong> on both sides for accurate comparison</li>
+            <li>• <strong>Adjust tolerance</strong> (40-60% works best for complex shapes)</li>
+            <li>• <strong>Try different objects</strong> to see various shape detection</li>
           </ul>
         </div>
 
         {/* Material Suggestions */}
         <div className="mt-4 bg-green-50 rounded-lg p-4">
-          <h3 className="font-semibold text-green-900 mb-2">Best Materials for Stamping:</h3>
+          <h3 className="font-semibold text-green-900 mb-2">Best Objects for Complex Shape Detection:</h3>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm text-green-800">
-            <div>• Coins (various sizes)</div>
-            <div>• Bottle caps</div>
-            <div>• Keys</div>
-            <div>• Erasers</div>
-            <div>• Small toys</div>
-            <div>• Buttons</div>
-            <div>• Small containers</div>
-            <div>• Jewelry pieces</div>
+            <div>• <strong>Simple shapes:</strong> coins, bottle caps</div>
+            <div>• <strong>Complex shapes:</strong> keys, jewelry</div>
+            <div>• <strong>Organic shapes:</strong> hands, fingers</div>
+            <div>• <strong>Geometric:</strong> LEGO pieces, toys</div>
+            <div>• <strong>Textured:</strong> erasers, buttons</div>
+            <div>• <strong>Irregular:</strong> rocks, shells</div>
+            <div>• <strong>Detailed:</strong> small figurines</div>
+            <div>• <strong>Custom:</strong> any small object</div>
           </div>
         </div>
       </div>
