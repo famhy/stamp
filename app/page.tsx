@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useRef, useCallback } from 'react'
+import Link from 'next/link'
 import { StampCanvas, StampShape, StampCanvasRef } from '@/components/StampCanvas'
 import { compareCanvases, ComparisonResult, hasContent } from '@/utils/canvasComparison'
 
@@ -10,6 +11,8 @@ export default function Home() {
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
   const [selectedShape, setSelectedShape] = useState<StampShape>('auto')
   const [tolerance, setTolerance] = useState(0.3)
+  const [leftPoints, setLeftPoints] = useState<{ x: number; y: number }[]>([])
+  const [rightPoints, setRightPoints] = useState<{ x: number; y: number }[]>([])
   
   const leftCanvasRef = useRef<StampCanvasRef>(null)
   const rightCanvasRef = useRef<StampCanvasRef>(null)
@@ -44,6 +47,8 @@ export default function Home() {
     setLeftImageData(null)
     setRightImageData(null)
     setComparisonResult(null)
+    setLeftPoints([])
+    setRightPoints([])
   }, [])
 
   // Compare existing stamps
@@ -65,6 +70,11 @@ export default function Home() {
         <div className="text-center mb-6">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">Stamp Comparison</h1>
           <p className="text-gray-600">Create two stamps and see if they match!</p>
+          <div className="mt-3 text-sm">
+            <Link href="/stamp" className="text-blue-600 hover:underline font-medium">
+              Open Stamp Tester
+            </Link>
+          </div>
         </div>
 
         {/* Controls */}
@@ -81,6 +91,7 @@ export default function Home() {
                 <option value="auto">Auto Detect (Recommended)</option>
                 <option value="circle">Circle</option>
                 <option value="square">Square</option>
+                <option value="points">Points Only</option>
                 <option value="freehand">Freehand</option>
               </select>
             </div>
@@ -165,8 +176,26 @@ export default function Home() {
                 height={400}
                 shape={selectedShape}
                 onStampComplete={handleLeftStampComplete}
+                onPointsUpdate={setLeftPoints}
                 className="w-full h-full"
               />
+            </div>
+            {/* Coordinate Display */}
+            <div className="mt-3 p-2 bg-gray-50 rounded border border-gray-200 h-24 overflow-y-auto">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Touch Coordinates ({leftPoints.length})
+              </h3>
+              <div className="flex flex-wrap gap-2 text-xs text-gray-600 font-mono">
+                {leftPoints.length > 0 ? (
+                  leftPoints.map((p, i) => (
+                    <span key={i} className="bg-white px-1.5 py-0.5 rounded shadow-sm border border-gray-100">
+                      {p.x},{p.y}
+                    </span>
+                  ))
+                ) : (
+                  <span className="italic text-gray-400">No points detected</span>
+                )}
+              </div>
             </div>
           </div>
 
@@ -182,8 +211,26 @@ export default function Home() {
                 height={400}
                 shape={selectedShape}
                 onStampComplete={handleRightStampComplete}
+                onPointsUpdate={setRightPoints}
                 className="w-full h-full"
               />
+            </div>
+            {/* Coordinate Display */}
+            <div className="mt-3 p-2 bg-gray-50 rounded border border-gray-200 h-24 overflow-y-auto">
+              <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">
+                Touch Coordinates ({rightPoints.length})
+              </h3>
+              <div className="flex flex-wrap gap-2 text-xs text-gray-600 font-mono">
+                {rightPoints.length > 0 ? (
+                  rightPoints.map((p, i) => (
+                    <span key={i} className="bg-white px-1.5 py-0.5 rounded shadow-sm border border-gray-100">
+                      {p.x},{p.y}
+                    </span>
+                  ))
+                ) : (
+                  <span className="italic text-gray-400">No points detected</span>
+                )}
+              </div>
             </div>
           </div>
         </div>

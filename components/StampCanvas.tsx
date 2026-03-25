@@ -2,13 +2,14 @@
 
 import React, { useRef, useEffect, useState, useCallback, forwardRef, useImperativeHandle } from 'react'
 
-export type StampShape = 'auto' | 'circle' | 'square' | 'freehand'
+export type StampShape = 'auto' | 'circle' | 'square' | 'freehand' | 'points'
 
 interface StampCanvasProps {
   width: number
   height: number
   shape: StampShape
   onStampComplete?: (imageData: ImageData) => void
+  onPointsUpdate?: (points: { x: number; y: number }[]) => void
   className?: string
 }
 
@@ -21,11 +22,13 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
   height,
   shape,
   onStampComplete,
+  onPointsUpdate,
   className = ''
 }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [isDrawing, setIsDrawing] = useState(false)
   const [hasContent, setHasContent] = useState(false)
+  const [contactPoints, setContactPoints] = useState<{ x: number; y: number }[]>([])
 
   // Clear the canvas
   const clearCanvas = useCallback(() => {
@@ -38,42 +41,48 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.clearRect(0, 0, width, height)
     setHasContent(false)
     setContactPoints([])
-    setTouchHistory([])
-    setIsCapturing(false)
-  }, [width, height])
+    if (onPointsUpdate) onPointsUpdate([])
+  }, [width, height, onPointsUpdate])
 
   // Expose clearCanvas method to parent via ref
   useImperativeHandle(ref, () => ({
     clearCanvas
   }), [clearCanvas])
 
-  // Draw a circle at the given position
-  const drawCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 30) => {
+  // Draw a circle at the given position (0.5cm approx 20px diameter)
+  const drawCircle = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 20) => {
     ctx.beginPath()
-    ctx.arc(x, y, size, 0, 2 * Math.PI)
+    ctx.arc(x, y, size / 2, 0, 2 * Math.PI)
     ctx.fill()
   }, [])
 
-  // Draw a square at the given position
-  const drawSquare = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 30) => {
+  // Draw a square at the given position (0.5cm approx 20px)
+  const drawSquare = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, size: number = 20) => {
     ctx.fillRect(x - size / 2, y - size / 2, size, size)
+  }, [])
+
+  // Draw a point at the given position (using the same 0.5cm size for consistency)
+  const drawPoint = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number) => {
+    ctx.beginPath()
+    ctx.arc(x, y, 10, 0, 2 * Math.PI)
+    ctx.fill()
   }, [])
 
   // Auto-detect and draw the actual contact area
   const drawAutoStamp = useCallback((ctx: CanvasRenderingContext2D, x: number, y: number, pressure: number = 1) => {
-    // Use pressure to determine size - more pressure = larger stamp
-    const baseSize = 15
-    const size = baseSize + (pressure * 20)
+    // Standard size of 0.5cm (approx 20px diameter)
+    // We can still use pressure to slightly modulate if desired, but base it on 20px
+    const baseSize = 20
+    const size = baseSize * (0.8 + pressure * 0.4) // Range: 16px to 24px
     
-    // Create a more realistic stamp shape based on pressure
     ctx.beginPath()
-    ctx.arc(x, y, size, 0, 2 * Math.PI)
+    ctx.arc(x, y, size / 2, 0, 2 * Math.PI)
     ctx.fill()
     
     // Add some variation to make it look more like a real stamp
     if (pressure > 0.5) {
       ctx.beginPath()
-      ctx.arc(x, y, size * 0.7, 0, 2 * Math.PI)
+      ctx.arc(x, y, (size / 2) * 0.7, 0, 2 * Math.PI)
       ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
       ctx.fill()
       ctx.fillStyle = '#000000' // Reset
@@ -91,20 +100,6 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-
-    let clientX: number, clientY: number
-    
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX
-      clientY = e.touches[0].clientY
-    } else {
-      clientX = e.clientX
-      clientY = e.clientY
-    }
-
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
@@ -114,26 +109,57 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
-    // Get pressure information if available
-    let pressure = 1
-    if ('touches' in e && e.touches[0]) {
-      // Try to get pressure from touch event
-      pressure = (e.touches[0] as any).force || (e.touches[0] as any).pressure || 1
+    const currentPoints: { x: number; y: number }[] = []
+
+    if ('touches' in e) {
+      // Multiple touches
+      Array.from(e.touches).forEach(touch => {
+        const x = (touch.clientX - rect.left) * scaleX
+        const y = (touch.clientY - rect.top) * scaleY
+        const pressure = (touch as any).force || (touch as any).pressure || 1
+        
+        if (shape === 'auto') {
+          drawAutoStamp(ctx, x, y, pressure)
+        } else if (shape === 'circle') {
+          drawCircle(ctx, x, y)
+        } else if (shape === 'square') {
+          drawSquare(ctx, x, y)
+        } else if (shape === 'points') {
+          drawPoint(ctx, x, y)
+        } else if (shape === 'freehand') {
+          ctx.beginPath()
+          ctx.moveTo(x, y)
+        }
+        currentPoints.push({ x: Math.round(x), y: Math.round(y) })
+      })
+    } else {
+      // Single mouse click
+      const x = (e.clientX - rect.left) * scaleX
+      const y = (e.clientY - rect.top) * scaleY
+      
+      if (shape === 'auto') {
+        drawAutoStamp(ctx, x, y, 1)
+      } else if (shape === 'circle') {
+        drawCircle(ctx, x, y)
+      } else if (shape === 'square') {
+        drawSquare(ctx, x, y)
+      } else if (shape === 'points') {
+        drawPoint(ctx, x, y)
+      } else if (shape === 'freehand') {
+        ctx.beginPath()
+        ctx.moveTo(x, y)
+      }
+      currentPoints.push({ x: Math.round(x), y: Math.round(y) })
     }
 
-    if (shape === 'auto') {
-      drawAutoStamp(ctx, x, y, pressure)
-    } else if (shape === 'circle') {
-      drawCircle(ctx, x, y)
-    } else if (shape === 'square') {
-      drawSquare(ctx, x, y)
-    } else if (shape === 'freehand') {
-      ctx.beginPath()
-      ctx.moveTo(x, y)
-    }
+    setContactPoints(prev => {
+      const updated = [...prev, ...currentPoints]
+      if (onPointsUpdate) onPointsUpdate(updated)
+      return updated
+    })
 
     setHasContent(true)
-  }, [shape, drawCircle, drawSquare, drawAutoStamp])
+  }, [shape, drawCircle, drawSquare, drawAutoStamp, drawPoint, onPointsUpdate])
 
   // Handle mouse/touch move
   const handleMove = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -147,28 +173,60 @@ export const StampCanvas = forwardRef<StampCanvasRef, StampCanvasProps>(({
     const rect = canvas.getBoundingClientRect()
     const scaleX = canvas.width / rect.width
     const scaleY = canvas.height / rect.height
-
-    let clientX: number, clientY: number
-    
-    if ('touches' in e) {
-      clientX = e.touches[0].clientX
-      clientY = e.touches[0].clientY
-    } else {
-      clientX = e.clientX
-      clientY = e.clientY
-    }
-
-    const x = (clientX - rect.left) * scaleX
-    const y = (clientY - rect.top) * scaleY
-
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
-    if (shape === 'freehand') {
-      ctx.lineTo(x, y)
-      ctx.stroke()
+    const currentPoints: { x: number; y: number }[] = []
+
+    if ('touches' in e) {
+      Array.from(e.touches).forEach(touch => {
+        const x = (touch.clientX - rect.left) * scaleX
+        const y = (touch.clientY - rect.top) * scaleY
+        
+        if (shape === 'freehand') {
+          ctx.lineTo(x, y)
+          ctx.stroke()
+        } else if (shape === 'points') {
+          drawPoint(ctx, x, y)
+        }
+        
+        if (shape === 'points') {
+          currentPoints.push({ x: Math.round(x), y: Math.round(y) })
+        }
+      })
+    } else {
+      const x = (e.clientX - rect.left) * scaleX
+      const y = (e.clientY - rect.top) * scaleY
+      
+      if (shape === 'freehand') {
+        ctx.lineTo(x, y)
+        ctx.stroke()
+      } else if (shape === 'points') {
+        drawPoint(ctx, x, y)
+      }
+      
+      if (shape === 'points') {
+        currentPoints.push({ x: Math.round(x), y: Math.round(y) })
+      }
     }
-  }, [isDrawing, shape])
+
+    if (currentPoints.length > 0) {
+      setContactPoints(prev => {
+        const last = prev[prev.length - 1]
+        // Filter out redundant points to avoid flooding
+        const novelPoints = currentPoints.filter(p => 
+          !last || Math.abs(last.x - p.x) > 2 || Math.abs(last.y - p.y) > 2
+        )
+        
+        if (novelPoints.length > 0) {
+          const updated = [...prev, ...novelPoints]
+          if (onPointsUpdate) onPointsUpdate(updated)
+          return updated
+        }
+        return prev
+      })
+    }
+  }, [isDrawing, shape, drawPoint, onPointsUpdate])
 
   // Handle mouse/touch end
   const handleEnd = useCallback((e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
