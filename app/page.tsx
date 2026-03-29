@@ -3,7 +3,7 @@
 import React, { useState, useRef, useCallback } from 'react'
 import Link from 'next/link'
 import { StampCanvas, StampShape, StampCanvasRef } from '@/components/StampCanvas'
-import { compareCanvases, ComparisonResult, hasContent } from '@/utils/canvasComparison'
+import { compareCanvases, ComparisonResult, CompareMode, hasContent } from '@/utils/canvasComparison'
 
 export default function Home() {
   const [leftImageData, setLeftImageData] = useState<ImageData | null>(null)
@@ -11,6 +11,7 @@ export default function Home() {
   const [comparisonResult, setComparisonResult] = useState<ComparisonResult | null>(null)
   const [selectedShape, setSelectedShape] = useState<StampShape>('auto')
   const [tolerance, setTolerance] = useState(0.3)
+  const [compareMode, setCompareMode] = useState<CompareMode>('shape_combined')
   const [leftPoints, setLeftPoints] = useState<{ x: number; y: number }[]>([])
   const [rightPoints, setRightPoints] = useState<{ x: number; y: number }[]>([])
   
@@ -29,10 +30,10 @@ export default function Home() {
     
     // Compare with left canvas if it exists
     if (leftImageData) {
-      const result = compareCanvases(leftImageData, imageData, tolerance)
+      const result = compareCanvases(leftImageData, imageData, tolerance, { mode: compareMode })
       setComparisonResult(result)
     }
-  }, [leftImageData, tolerance])
+  }, [leftImageData, tolerance, compareMode])
 
   // Reset both canvases
   const handleReset = useCallback(() => {
@@ -54,10 +55,10 @@ export default function Home() {
   // Compare existing stamps
   const handleCompare = useCallback(() => {
     if (leftImageData && rightImageData) {
-      const result = compareCanvases(leftImageData, rightImageData, tolerance)
+      const result = compareCanvases(leftImageData, rightImageData, tolerance, { mode: compareMode })
       setComparisonResult(result)
     }
-  }, [leftImageData, rightImageData, tolerance])
+  }, [leftImageData, rightImageData, tolerance, compareMode])
 
   // Check if both canvases have content
   const bothHaveContent = leftImageData && rightImageData && 
@@ -111,6 +112,21 @@ export default function Home() {
               <span className="text-sm text-gray-600 w-12">
                 {Math.round(tolerance * 100)}%
               </span>
+            </div>
+
+            {/* Compare Mode */}
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-medium text-gray-700">Method:</label>
+              <select
+                value={compareMode}
+                onChange={(e) => setCompareMode(e.target.value as CompareMode)}
+                className="px-3 py-1 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <option value="pixel">Pixel (exact)</option>
+                <option value="shape_iou">Shape IoU</option>
+                <option value="shape_boundary_iou">Shape Boundary IoU</option>
+                <option value="shape_combined">Shape Combined</option>
+              </select>
             </div>
 
             {/* Action Buttons */}

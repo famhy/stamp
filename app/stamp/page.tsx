@@ -1,11 +1,7 @@
-import StampApp from '../stamp'
-
-export const metadata = {
-  title: 'Stamp Tester',
-  description: 'Test and recognize conductive stamp patterns',
-}
+"use client";
+import StampApp from "../stamp";
+import StampLab from "./stampLab";
 
 export default function StampPage() {
-  return <StampApp />
+  return <StampLab />;
 }
-

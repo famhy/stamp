@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useCallback } from "react";
+import type { CompareMode } from "@/utils/canvasComparison";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 const GRID_COLS = 10;
@@ -48,19 +49,191 @@ const KNOWN_PATTERNS: PatternDef[] = [
   },
 ];
 
-function matchPattern(activeDots: Dot[]): string | null {
-  const keys = new Set(activeDots.map((d) => d.key));
-  for (const p of KNOWN_PATTERNS) {
-    const pSet = new Set<string>(p.dots);
-    if (keys.size === pSet.size) {
-      let matches = true;
-      keys.forEach((k) => {
-        if (!pSet.has(k)) matches = false;
-      });
-      if (matches) return p.label;
+type ScoreResult = {
+  label: string | null;
+  score: number | null; // 0..100
+};
+
+function clamp(n: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, n));
+}
+
+function maskFromDots(dots: Dot[]): Uint8Array {
+  const mask = new Uint8Array(GRID_COLS * GRID_ROWS);
+  for (const d of dots) {
+    if (d.col < 0 || d.col >= GRID_COLS || d.row < 0 || d.row >= GRID_ROWS) continue;
+    mask[d.row * GRID_COLS + d.col] = 1;
+  }
+  return mask;
+}
+
+function maskFromPatternDots(dots: string[]): Uint8Array {
+  const out = new Uint8Array(GRID_COLS * GRID_ROWS);
+  for (const k of dots) {
+    const [colStr, rowStr] = k.split(",");
+    const col = Number(colStr);
+    const row = Number(rowStr);
+    if (Number.isNaN(col) || Number.isNaN(row)) continue;
+    if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) continue;
+    out[row * GRID_COLS + col] = 1;
+  }
+  return out;
+}
+
+function computeIoU(a: Uint8Array, b: Uint8Array) {
+  let intersection = 0;
+  let union = 0;
+  for (let i = 0; i < a.length; i++) {
+    const av = a[i] === 1;
+    const bv = b[i] === 1;
+    if (av || bv) union++;
+    if (av && bv) intersection++;
+  }
+  return { intersection, union };
+}
+
+function boundaryMask(src: Uint8Array) {
+  const out = new Uint8Array(GRID_COLS * GRID_ROWS);
+  const idx = (x: number, y: number) => y * GRID_COLS + x;
+
+  for (let y = 0; y < GRID_ROWS; y++) {
+    for (let x = 0; x < GRID_COLS; x++) {
+      const i = idx(x, y);
+      if (src[i] === 0) continue;
+
+      const isBoundary =
+        x === 0 ||
+        y === 0 ||
+        x === GRID_COLS - 1 ||
+        y === GRID_ROWS - 1 ||
+        src[idx(x - 1, y)] === 0 ||
+        src[idx(x + 1, y)] === 0 ||
+        src[idx(x, y - 1)] === 0 ||
+        src[idx(x, y + 1)] === 0;
+
+      if (isBoundary) out[i] = 1;
     }
   }
-  return null;
+
+  return out;
+}
+
+function dilateMask(src: Uint8Array, radius: number) {
+  // Dilation in "cell units" (diamond / 4-neighborhood).
+  // This provides tolerance to small shifts or missing dots.
+  if (radius <= 0) return src;
+  const size = GRID_COLS * GRID_ROWS;
+
+  // BFS distance transform from all "on" pixels.
+  const dist = new Int32Array(size);
+  dist.fill(-1);
+  const q = new Int32Array(size);
+  let head = 0;
+  let tail = 0;
+
+  for (let i = 0; i < size; i++) {
+    if (src[i] === 1) {
+      dist[i] = 0;
+      q[tail++] = i;
+    }
+  }
+
+  while (head < tail) {
+    const cur = q[head++];
+    const d = dist[cur];
+    if (d >= radius) continue;
+    const cx = cur % GRID_COLS;
+    const cy = Math.floor(cur / GRID_COLS);
+
+    const tryPush = (nx: number, ny: number) => {
+      if (nx < 0 || ny < 0 || nx >= GRID_COLS || ny >= GRID_ROWS) return;
+      const ni = ny * GRID_COLS + nx;
+      if (dist[ni] !== -1) return;
+      dist[ni] = d + 1;
+      q[tail++] = ni;
+    };
+
+    tryPush(cx + 1, cy);
+    tryPush(cx - 1, cy);
+    tryPush(cx, cy + 1);
+    tryPush(cx, cy - 1);
+  }
+
+  const out = new Uint8Array(size);
+  for (let i = 0; i < size; i++) {
+    if (dist[i] !== -1 && dist[i] <= radius) out[i] = 1;
+  }
+  return out;
+}
+
+function scoreMasks(
+  maskA: Uint8Array,
+  maskB: Uint8Array,
+  mode: CompareMode,
+  tolerance: number
+): number {
+  const iou = computeIoU(maskA, maskB);
+
+  const iouScore =
+    iou.union === 0 ? 0 : (iou.intersection / iou.union) * 100;
+
+  if (mode === "pixel") {
+    // "Pixel" mode here means exact dot overlap without dilation.
+    return iouScore;
+  }
+
+  // Shape modes: apply dilation based on tolerance.
+  const dilationRadius = Math.max(0, Math.round(tolerance * 3));
+  const aDil = dilateMask(maskA, dilationRadius);
+  const bDil = dilateMask(maskB, dilationRadius);
+  const iouDil = computeIoU(aDil, bDil);
+  const shapeIoUScore =
+    iouDil.union === 0 ? 0 : (iouDil.intersection / iouDil.union) * 100;
+
+  const aB = boundaryMask(aDil);
+  const bB = boundaryMask(bDil);
+  const boundaryRadius = dilationRadius;
+  const aBd = dilateMask(aB, boundaryRadius);
+  const bBd = dilateMask(bB, boundaryRadius);
+  const bIou = computeIoU(aBd, bBd);
+  const boundaryScore =
+    bIou.union === 0 ? 0 : (bIou.intersection / bIou.union) * 100;
+
+  if (mode === "shape_iou") return shapeIoUScore;
+  if (mode === "shape_boundary_iou") return boundaryScore;
+
+  // shape_combined
+  return 0.65 * shapeIoUScore + 0.35 * boundaryScore;
+}
+
+function matchPattern(
+  activeDots: Dot[],
+  mode: CompareMode,
+  tolerance: number
+): ScoreResult {
+  const maskActive = maskFromDots(activeDots);
+  if (maskActive.reduce((a, b) => a + b, 0) === 0) {
+    return { label: null, score: null };
+  }
+
+  const threshold = clamp(80 - tolerance * 40, 35, 90);
+
+  let bestLabel: string | null = null;
+  let bestScore = -1;
+
+  for (const p of KNOWN_PATTERNS) {
+    const maskP = maskFromPatternDots(p.dots);
+    const score = scoreMasks(maskActive, maskP, mode, tolerance);
+    if (score > bestScore) {
+      bestScore = score;
+      bestLabel = p.label;
+    }
+  }
+
+  if (bestScore >= threshold) {
+    return { label: bestLabel, score: bestScore };
+  }
+  return { label: null, score: bestScore < 0 ? null : bestScore };
 }
 
 // ── sub-components ────────────────────────────────────────────────────────────
@@ -142,6 +315,9 @@ export default function StampApp() {
   const [activeDots, setActiveDots] = useState<Dot[]>([]);
   const [lastStamp, setLastStamp] = useState<Dot[] | null>(null); // snapshot after lift
   const [matchLabel, setMatchLabel] = useState<string | null>(null);
+  const [matchScore, setMatchScore] = useState<number | null>(null);
+  const [compareMode, setCompareMode] = useState<CompareMode>("shape_combined");
+  const [tolerance, setTolerance] = useState<number>(0.3);
   const [flash, setFlash] = useState(false);
   const [history, setHistory] = useState<
     { dots: Dot[]; label: string | null; ts: number }[]
@@ -185,9 +361,10 @@ export default function StampApp() {
     (e: { preventDefault: () => void }) => {
       e.preventDefault();
       if (activeDots.length >= MIN_TOUCHES) {
-        const label = matchPattern(activeDots);
+        const { label, score } = matchPattern(activeDots, compareMode, tolerance);
         setLastStamp([...activeDots]);
         setMatchLabel(label);
+        setMatchScore(score);
         setFlash(true);
         setTimeout(() => setFlash(false), 600);
         setHistory((h) =>
@@ -196,7 +373,7 @@ export default function StampApp() {
       }
       setActiveDots([]);
     },
-    [activeDots],
+    [activeDots, compareMode, tolerance],
   );
 
   // ── mouse simulation (desktop testing) ────────────────────────────────────
@@ -223,9 +400,10 @@ export default function StampApp() {
 
   const handleStampClick = useCallback(() => {
     if (activeDots.length >= 1) {
-      const label = matchPattern(activeDots);
+      const { label, score } = matchPattern(activeDots, compareMode, tolerance);
       setLastStamp([...activeDots]);
       setMatchLabel(label);
+      setMatchScore(score);
       setFlash(true);
       setTimeout(() => setFlash(false), 600);
       setHistory((h) =>
@@ -233,7 +411,7 @@ export default function StampApp() {
       );
       setActiveDots([]);
     }
-  }, [activeDots]);
+  }, [activeDots, compareMode, tolerance]);
 
   const padW = GRID_COLS * CELL_SIZE;
   const padH = GRID_ROWS * CELL_SIZE;
@@ -372,6 +550,53 @@ export default function StampApp() {
                 )}
               </div>
 
+              {/* Compare controls (shape similarity) */}
+              <div
+                style={{
+                  display: "flex",
+                  gap: 14,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexWrap: "wrap",
+                  marginTop: 6,
+                }}
+              >
+                <div style={{ fontSize: 13, color: "#475569" }}>Method:</div>
+                <select
+                  value={compareMode}
+                  onChange={(e) => setCompareMode(e.target.value as CompareMode)}
+                  style={{
+                    padding: "6px 12px",
+                    borderRadius: 8,
+                    border: "1px solid #334155",
+                    background: "#0f172a",
+                    color: "#e2e8f0",
+                    fontFamily: "inherit",
+                    fontSize: 13,
+                    cursor: "pointer",
+                  }}
+                >
+                  <option value="pixel">Pixel</option>
+                  <option value="shape_iou">Shape IoU</option>
+                  <option value="shape_boundary_iou">Shape Boundary IoU</option>
+                  <option value="shape_combined">Shape Combined</option>
+                </select>
+
+                <div style={{ fontSize: 13, color: "#475569" }}>Tolerance:</div>
+                <input
+                  type="range"
+                  min="0.1"
+                  max="0.8"
+                  step="0.05"
+                  value={tolerance}
+                  onChange={(e) => setTolerance(parseFloat(e.target.value))}
+                  style={{ width: 120 }}
+                />
+                <span style={{ fontSize: 13, color: "#64748b", minWidth: 52, textAlign: "right" }}>
+                  {Math.round(tolerance * 100)}%
+                </span>
+              </div>
+
               <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
                 <div
                   style={{
@@ -453,6 +678,11 @@ export default function StampApp() {
                   >
                     {matchLabel ? `✅ ${matchLabel}` : "⚪ Unknown pattern"}
                   </div>
+                  {matchScore !== null && (
+                    <div style={{ fontSize: 12, color: "#22c55e", marginTop: 6 }}>
+                      Similarity: {matchScore.toFixed(1)}%
+                    </div>
+                  )}
                   <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>
                     {lastStamp.map((d: { key: any }) => d.key).join(" · ")}
                   </div>
