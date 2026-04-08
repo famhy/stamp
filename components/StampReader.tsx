@@ -32,8 +32,8 @@ export interface MatchResult {
 const COLS = 10;
 const ROWS = 10;
 const CLUSTER_R = 40;
-const DEV = process.env.NODE_ENV !== "production";
-// const DEV = false;
+// const DEV = process.env.NODE_ENV !== "production";
+const DEV = true;
 // ── Geometry helpers ──────────────────────────────────────────────────────────
 function getPadCoords(
   t: { clientX: number; clientY: number },
