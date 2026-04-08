@@ -278,7 +278,7 @@ export default function StampLab() {
         points: r.shape.points,
       })),
     );
-    alert(JSON.stringify(results));
+
     console.log("results", results);
 
     if (results[0]) setLatestPointMap(results[0].pointMap);
